@@ -31,8 +31,13 @@ jobs:
             exit 0
           fi
 
-          # Newest 3 commit subjects (the API lists commits oldest-first)
-          SUMMARY=$(jq -r '.commits[-3:] | reverse | .[] | "• \(.commit.message | split("\n")[0]) (\(.sha[:7]))"' compare.json)
+          # The compare API truncates its commits array at 250 entries, keeping the
+          # OLDEST ones, so .commits[-1] is not the current main tip. Ask the commits
+          # API for the newest ones instead, capped at AHEAD so we never list a commit
+          # release already has.
+          LIMIT=$(( AHEAD < 3 ? AHEAD : 3 ))
+          SUMMARY=$(gh api "repos/$UPSTREAM/commits?sha=main&per_page=$LIMIT" \
+            --jq '.[] | "• \(.commit.message | split("\n")[0]) (\(.sha[:7]))"')
           URL="https://github.com/${UPSTREAM}/compare/${FORK%%/*}:${FORK_BRANCH}...${UPSTREAM%%/*}:main"
 
           if [ -z "$LARK_WEBHOOK" ]; then
