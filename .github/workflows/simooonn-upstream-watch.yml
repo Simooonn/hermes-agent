@@ -1,0 +1,46 @@
+name: Simooonn Upstream Watch
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # daily at 09:00 UTC
+  workflow_dispatch:        # allow manual trigger
+
+env:
+  UPSTREAM: NousResearch/hermes-agent
+  FORK_BRANCH: release
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check upstream for new commits
+        id: compare
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LARK_WEBHOOK: ${{ secrets.LARK_UPSTREAM_WEBHOOK }}
+          FORK: ${{ github.repository }}
+        run: |
+          # Compare Simooonn:release against NousResearch:main
+          gh api "repos/$UPSTREAM/compare/${FORK%%/*}:$FORK_BRANCH...${UPSTREAM%%/*}:main" > compare.json
+
+          AHEAD=$(jq -r '.ahead_by' compare.json)
+          echo "ahead_by=$AHEAD" >> "$GITHUB_OUTPUT"
+
+          if [ "$AHEAD" = "0" ]; then
+            echo "No new upstream commits."
+            exit 0
+          fi
+
+          # Newest 3 commit subjects (the API lists commits oldest-first)
+          SUMMARY=$(jq -r '.commits[-3:] | reverse | .[] | "• \(.commit.message | split("\n")[0]) (\(.sha[:7]))"' compare.json)
+          URL="https://github.com/${UPSTREAM}/compare/${FORK%%/*}:${FORK_BRANCH}...${UPSTREAM%%/*}:main"
+
+          if [ -z "$LARK_WEBHOOK" ]; then
+            echo "LARK_UPSTREAM_WEBHOOK not set; skipping notification."
+            exit 0
+          fi
+
+          # jq builds the payload so quotes in commit subjects cannot break the JSON
+          jq -n --arg ahead "$AHEAD" --arg summary "$SUMMARY" --arg url "$URL" \
+            '{msg_type: "text", content: {text: "⬆️ 上游 hermes-agent 有 \($ahead) 个新提交未合并到 release\n\n最近更新：\n\($summary)\n\n👉 \($url)"}}' \
+            | curl -sf -X POST "$LARK_WEBHOOK" -H "Content-Type: application/json" -d @-
