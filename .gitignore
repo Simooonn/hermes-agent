@@ -340,3 +340,5 @@ infografico/
 
 apps/desktop/.dist-build*
 .omc/
+/apps/desktop/本地开发与打包指南.md
+/本地开发指南.md
