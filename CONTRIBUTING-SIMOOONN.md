@@ -8,30 +8,45 @@
 
 | 分支 | 用途 | 规则 |
 | --- | --- | --- |
-| `main` | 跟踪上游 `NousResearch/hermes-agent:main` | 只作为官方代码镜像，不放任何定制代码 |
+| `main` | 跟踪上游 `NousResearch/hermes-agent:main` | 官方代码镜像，只允许 `simooonn-upstream-watch.yml` 一个例外文件 |
 | `release` | 定制代码的基础分支和生产发布分支 | 所有定制改动最终汇入此分支 |
 | `feature/xxx` | 新功能开发 | 从最新 `release` 切出 |
 | `fix/xxx` | 问题修复 | 从最新 `release` 切出 |
 
 个人功能分支使用小写、简短且能表达用途的名称，例如 `feature/simooonn-upstream-watch` 或 `fix/simooonn-adapter-timeout`。
 
+### `main` 上唯一的例外：上游监控 workflow
+
+`.github/workflows/simooonn-upstream-watch.yml` 必须同时存在于 `main`：GitHub Actions 的 `schedule` 触发器只读取仓库默认分支（本仓库默认分支是 `main`），只放在 `release` 上永远不会定时运行。
+
+因此：
+
+- 该文件是 `main` 上唯一的 Simooonn 自有文件，其他任何定制代码一律不得进入 `main`。
+- `main` 与 `release` 上的这份文件内容必须保持一致；改动时两边都要更新，否则 `git merge origin/main` 到 `release` 时会冲突。
+- 该文件只应有 `schedule` 和 `workflow_dispatch` 两个触发器，不引入任何需要 fork 侧秘密以外前提的逻辑，保证它能长期留在 `main` 上而很少需要改动。
+
 ### 合并上游
 
 - `origin` 指向 Simooonn fork，`upstream` 指向官方仓库。
 - 合并前确保 `origin/main` 已与上游 `main` 同步。
 - 在 `release` 上执行 `git merge origin/main`，不要使用 rebase，以保留分支和合并历史。
-- 不要把 `release` 的定制提交合并或推送到 `main`。
+- 除上游监控 workflow 外，不要把 `release` 的定制提交合并或推送到 `main`。
 
 ```bash
 git fetch upstream
 git switch main
-git merge --ff-only upstream/main
+# main 带有 workflow 例外文件，无法快进合并，必须产生一个合并提交
+git merge upstream/main -m "chore: merge upstream main"
 git push origin main
 git switch release
 git merge origin/main
 ```
 
-如果 `git merge --ff-only upstream/main` 失败，说明 `main` 已发生非预期分叉；停止操作并排查，不要强推或改用 rebase。
+`main` 上出现合并提交是预期结果，由 workflow 例外文件导致。除该文件外，`main` 不应有任何本地改动；可通过下面的命令确认：
+
+```bash
+git diff --name-only upstream/main main   # 只应输出 .github/workflows/simooonn-upstream-watch.yml
+```
 
 ## 2. 双 checkout 安全边界
 
